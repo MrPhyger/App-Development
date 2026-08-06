@@ -15,11 +15,11 @@ class NotificationService {
   Future<void> init() async {
     tz.initializeTimeZones();
 
-    const settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    await plugin.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
     );
-
-    await plugin.initialize(settings);
 
     await plugin
         .resolvePlatformSpecificImplementation<
@@ -38,7 +38,7 @@ class NotificationService {
       9,
     );
 
-    if (dueDate.isBefore(now)) {
+    if (!dueDate.isAfter(now)) {
       dueDate = tz.TZDateTime(
         tz.local,
         now.year,
@@ -48,28 +48,27 @@ class NotificationService {
       );
     }
 
-    final notificationDate = dueDate.subtract(
+    final reminderDate = dueDate.subtract(
       Duration(days: bill.reminderDays),
     );
 
-    final notificationId =
-        bill.id ?? DateTime.now().millisecondsSinceEpoch.remainder(1 << 31);
-
     await plugin.zonedSchedule(
-      notificationId,
+      bill.id ?? DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
       'Bill due soon',
       '${bill.name} - ₹${bill.amount.toStringAsFixed(0)}',
-      notificationDate,
+      reminderDate,
       const NotificationDetails(
         android: AndroidNotificationDetails(
           'bills',
           'Recurring bills',
-          channelDescription: 'Monthly recurring bill reminders',
+          channelDescription: 'Monthly bill reminders',
           importance: Importance.high,
           priority: Priority.high,
         ),
       ),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteDate,
       matchDateTimeComponents: DateTimeComponents.dayOfMonthAndTime,
     );
   }
