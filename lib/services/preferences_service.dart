@@ -1,0 +1,2 @@
+import 'package:shared_preferences/shared_preferences.dart';
+class PreferencesService { PreferencesService._(); static final instance=PreferencesService._(); late SharedPreferences _p; bool get darkMode=>_p.getBool('dark')??false; double get budget=>_p.getDouble('budget')??0; Future<void> init() async=>_p=await SharedPreferences.getInstance(); Future<void> setDark(bool v)=>_p.setBool('dark',v); Future<void> setBudget(double v)=>_p.setDouble('budget',v); }
