@@ -33,6 +33,13 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
   List<Expense> items = [];
 
+  double get total {
+    return items.fold<double>(
+      0,
+      (sum, item) => sum + item.amount,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -50,13 +57,6 @@ class _TrackerScreenState extends State<TrackerScreen> {
     setState(() {
       items = expenses;
     });
-  }
-
-  double get total {
-    return items.fold<double>(
-      0,
-      (sum, expense) => sum + expense.amount,
-    );
   }
 
   Future<void> addExpense() async {
@@ -139,27 +139,23 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
     final amount = double.tryParse(amountController.text.trim());
 
-    if (shouldSave != true || amount == null || amount <= 0) {
-      amountController.dispose();
-      noteController.dispose();
-      return;
-    }
+    if (shouldSave == true && amount != null && amount > 0) {
+      await DatabaseService.instance.addExpense(
+        Expense(
+          amount: amount,
+          category: selectedCategory,
+          date: DateTime.now(),
+          note: noteController.text.trim().isEmpty
+              ? null
+              : noteController.text.trim(),
+        ),
+      );
 
-    await DatabaseService.instance.addExpense(
-      Expense(
-        amount: amount,
-        category: selectedCategory,
-        date: DateTime.now(),
-        note: noteController.text.trim().isEmpty
-            ? null
-            : noteController.text.trim(),
-      ),
-    );
+      await loadExpenses();
+    }
 
     amountController.dispose();
     noteController.dispose();
-
-    await loadExpenses();
   }
 
   Future<void> setBudget() async {
@@ -220,7 +216,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
     final nameController = TextEditingController();
     final amountController = TextEditingController();
     final dueDayController = TextEditingController(text: '5');
-    final reminderDaysController = TextEditingController(text: '2');
+    final reminderController = TextEditingController(text: '2');
 
     final shouldSave = await showDialog<bool>(
       context: context,
@@ -254,12 +250,11 @@ class _TrackerScreenState extends State<TrackerScreen> {
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     labelText: 'Due day of month',
-                    hintText: 'For example, 5',
                   ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: reminderDaysController,
+                  controller: reminderController,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     labelText: 'Reminder days before due date',
@@ -289,14 +284,12 @@ class _TrackerScreenState extends State<TrackerScreen> {
     final name = nameController.text.trim();
     final amount = double.tryParse(amountController.text.trim());
     final dueDay = int.tryParse(dueDayController.text.trim());
-    final reminderDays = int.tryParse(
-      reminderDaysController.text.trim(),
-    );
+    final reminderDays = int.tryParse(reminderController.text.trim());
 
     nameController.dispose();
     amountController.dispose();
     dueDayController.dispose();
-    reminderDaysController.dispose();
+    reminderController.dispose();
 
     if (shouldSave != true ||
         name.isEmpty ||
@@ -337,17 +330,9 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Bill reminder scheduled monthly'),
+        content: Text('Monthly reminder scheduled'),
       ),
     );
-  }
-
-  Future<void> deleteExpense(Expense expense) async {
-    if (expense.id == null) {
-      return;
-    }
-
-    await DatabaseService.instance.deleteExpense(expense.id!);
   }
 
   @override
@@ -368,7 +353,6 @@ class _TrackerScreenState extends State<TrackerScreen> {
             IconButton(
               onPressed: setBudget,
               icon: const Icon(Icons.account_balance),
-              tooltip: 'Set budget',
             ),
           ],
         ),
@@ -379,7 +363,6 @@ class _TrackerScreenState extends State<TrackerScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Total spent'),
-                const SizedBox(height: 4),
                 MoneyText(
                   total,
                   style: const TextStyle(
@@ -388,12 +371,10 @@ class _TrackerScreenState extends State<TrackerScreen> {
                   ),
                 ),
                 if (budget > 0) ...[
-                  const SizedBox(height: 12),
                   LinearProgressIndicator(
-                    value: progress.clamp(0.0, 1.0),
+                    value: progress.clamp(0, 1).toDouble(),
                     color: progress > 0.9 ? Colors.red : null,
                   ),
-                  const SizedBox(height: 6),
                   Text('${money(total)} of ${money(budget)} budget'),
                 ],
               ],
@@ -412,46 +393,27 @@ class _TrackerScreenState extends State<TrackerScreen> {
           label: const Text('Recurring Bills & Reminders'),
         ),
         const SizedBox(height: 8),
-        if (items.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(
-              child: Text('No expenses recorded this month.'),
+        ...items.map(
+          (expense) => Dismissible(
+            key: ValueKey(
+              expense.id ?? expense.date.toIso8601String(),
             ),
-          )
-        else
-          ...items.map(
-            (expense) => Dismissible(
-              key: ValueKey(expense.id ?? expense.date.toIso8601String()),
-              direction: DismissDirection.endToStart,
-              background: Container(
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.only(right: 20),
-                color: Colors.red,
-                child: const Icon(
-                  Icons.delete,
-                  color: Colors.white,
-                ),
-              ),
-              onDismissed: (_) async {
-                setState(() {
-                  items.remove(expense);
-                });
+            onDismissed: (_) async {
+              setState(() {
+                items.remove(expense);
+              });
 
-                await deleteExpense(expense);
-              },
-              child: ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.receipt_long),
-                ),
-                title: Text(expense.category),
-                subtitle: expense.note == null || expense.note!.isEmpty
-                    ? null
-                    : Text(expense.note!),
-                trailing: MoneyText(expense.amount),
-              ),
+              if (expense.id != null) {
+                await DatabaseService.instance.deleteExpense(expense.id!);
+              }
+            },
+            child: ListTile(
+              title: Text(expense.category),
+              subtitle: Text(expense.note ?? ''),
+              trailing: MoneyText(expense.amount),
             ),
           ),
+        ),
       ],
     );
   }
